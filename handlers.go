@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"html/template"
+	"io"
 	"io/fs"
 	"log"
 	"net/http"
@@ -18,10 +19,11 @@ type Server struct {
 	cfg        *Config
 	store      *SessionStore
 	controller *Controller
+	streamer   Streamer
 	tmpl       *template.Template
 }
 
-func NewServer(cfg *Config, store *SessionStore, controller *Controller, templatesFS fs.FS) (*Server, error) {
+func NewServer(cfg *Config, store *SessionStore, controller *Controller, streamer Streamer, templatesFS fs.FS) (*Server, error) {
 	funcs := template.FuncMap{
 		"fmtTime": func(t time.Time) string {
 			if t.IsZero() {
@@ -44,6 +46,7 @@ func NewServer(cfg *Config, store *SessionStore, controller *Controller, templat
 		cfg:        cfg,
 		store:      store,
 		controller: controller,
+		streamer:   streamer,
 		tmpl:       tmpl,
 	}, nil
 }
@@ -63,6 +66,9 @@ func (s *Server) Routes(staticFS fs.FS) *http.ServeMux {
 	mux.HandleFunc("GET /sessions/{id}/videos/{file}", s.handleVideo)
 	mux.HandleFunc("GET /settings", s.handleSettings)
 	mux.HandleFunc("POST /settings", s.handleSaveSettings)
+	mux.HandleFunc("GET /viewfinder.mjpeg", s.handleViewfinderStream)
+	mux.HandleFunc("POST /viewfinder/stop", s.handleViewfinderStop)
+	mux.HandleFunc("GET /viewfinder/status.json", s.handleViewfinderStatus)
 	mux.Handle("GET /static/", http.FileServerFS(staticFS))
 	return mux
 }
@@ -378,6 +384,61 @@ type settingsData struct {
 		HardwareBitrate BitratePreset
 	}
 	HardwareAvailable bool
+}
+
+// flushWriter wraps an http.ResponseWriter so each Write is followed by a
+// Flush — required for multipart/x-mixed-replace MJPEG to actually reach the
+// browser as the ffmpeg child produces parts.
+type flushWriter struct {
+	w io.Writer
+	f http.Flusher
+}
+
+func (fw *flushWriter) Write(p []byte) (int, error) {
+	n, err := fw.w.Write(p)
+	if fw.f != nil {
+		fw.f.Flush()
+	}
+	return n, err
+}
+
+func (s *Server) handleViewfinderStream(w http.ResponseWriter, r *http.Request) {
+	ctx, release, err := s.controller.AcquireViewfinder(r.Context())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusConflict)
+		return
+	}
+	defer release()
+
+	flusher, _ := w.(http.Flusher)
+	w.Header().Set("Content-Type", "multipart/x-mixed-replace; boundary=ffmpeg")
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(http.StatusOK)
+	if flusher != nil {
+		flusher.Flush()
+	}
+
+	fw := &flushWriter{w: w, f: flusher}
+	if err := s.streamer.Stream(ctx, fw); err != nil {
+		s.controller.SetViewfinderError(err.Error())
+		log.Printf("viewfinder error: %v", err)
+	}
+}
+
+func (s *Server) handleViewfinderStop(w http.ResponseWriter, r *http.Request) {
+	s.controller.StopViewfinder()
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) handleViewfinderStatus(w http.ResponseWriter, r *http.Request) {
+	running, capturing, lastErr := s.controller.ViewfinderStatus()
+	resp := struct {
+		Running   bool   `json:"running"`
+		Capturing bool   `json:"capturing"`
+		LastError string `json:"last_error,omitempty"`
+	}{Running: running, Capturing: capturing, LastError: lastErr}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {

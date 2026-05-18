@@ -27,6 +27,23 @@
 <div class="banner">No capture in progress.</div>
 {{end}}
 
+<section class="card viewfinder-card">
+  <h3>Viewfinder</h3>
+  {{if .Capturing}}
+    <p class="muted">Camera is busy capturing — stop the session to use the viewfinder.</p>
+  {{else}}
+    <p class="muted">Live preview to position the camera before starting a session.</p>
+    <div class="controls">
+      <button id="vf-start" type="button">Start viewfinder</button>
+      <button id="vf-stop" type="button" hidden>Stop viewfinder</button>
+    </div>
+    <div class="viewfinder-stage">
+      <img id="vf-img" alt="" hidden>
+    </div>
+    <p id="vf-err" class="error" hidden></p>
+  {{end}}
+</section>
+
 <h2>Sessions</h2>
 
 {{if .Sessions}}
@@ -68,5 +85,6 @@
 </main>
 
 <footer><small>Snapshoter — a small timelapse server.</small></footer>
+<script src="/static/app.js"></script>
 </body>
 </html>

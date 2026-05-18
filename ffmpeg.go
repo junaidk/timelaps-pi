@@ -8,6 +8,7 @@ import (
 	"image/color"
 	"image/draw"
 	"image/jpeg"
+	"io"
 	"os"
 	"os/exec"
 	"strings"
@@ -111,6 +112,88 @@ func compileArgsHW(framesDir, outputPath string, fps, startNumber int, bitrate B
 		"-b:v", bitrate.FFArg(),
 		"-pix_fmt", "yuv420p",
 		outputPath,
+	}
+}
+
+// Streamer produces an MJPEG byte stream for the viewfinder. Implementations
+// must honour ctx.Done(): a cancelled context means "release the camera now".
+type Streamer interface {
+	Stream(ctx context.Context, w io.Writer) error
+}
+
+// viewfinderBoundary is the multipart boundary the ffmpeg mpjpeg muxer uses,
+// and the one we synthesize in the fake streamer. Must match the Content-Type
+// header the handler sets.
+const viewfinderBoundary = "ffmpeg"
+
+type RealStreamer struct {
+	cfg *Config
+}
+
+func (r *RealStreamer) Stream(ctx context.Context, w io.Writer) error {
+	_, camera := r.cfg.Snapshot()
+	args := []string{
+		"-hide_banner", "-loglevel", "error",
+		"-f", "v4l2",
+		"-video_size", "1280x720",
+		"-i", camera,
+		"-f", "mpjpeg",
+		"-q:v", "5",
+		"pipe:1",
+	}
+	cmd := exec.CommandContext(ctx, "ffmpeg", args...)
+	cmd.Stdout = w
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+	if ctx.Err() != nil {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("ffmpeg viewfinder failed: %v: %s", err, strings.TrimSpace(stderr.String()))
+	}
+	return nil
+}
+
+type FakeStreamer struct{}
+
+func (FakeStreamer) Stream(ctx context.Context, w io.Writer) error {
+	const fw, fh = 640, 480
+	for {
+		if err := ctx.Err(); err != nil {
+			return nil
+		}
+		img := image.NewRGBA(image.Rect(0, 0, fw, fh))
+		t := time.Now()
+		hue := uint8((t.UnixMilli() / 50) % 256)
+		bg := color.RGBA{R: hue, G: 255 - hue, B: uint8((int(hue) + 128) % 256), A: 255}
+		draw.Draw(img, img.Bounds(), &image.Uniform{C: bg}, image.Point{}, draw.Src)
+		band := color.RGBA{R: 255 - hue, G: hue, B: 255, A: 255}
+		for y := 0; y < fh; y++ {
+			x := (int(t.UnixMilli()/30) + y) % fw
+			for dx := 0; dx < 16 && x+dx < fw; dx++ {
+				img.Set(x+dx, y, band)
+			}
+		}
+		var jbuf bytes.Buffer
+		if err := jpeg.Encode(&jbuf, img, &jpeg.Options{Quality: 75}); err != nil {
+			return err
+		}
+		header := fmt.Sprintf("--%s\r\nContent-Type: image/jpeg\r\nContent-Length: %d\r\n\r\n", viewfinderBoundary, jbuf.Len())
+		if _, err := io.WriteString(w, header); err != nil {
+			return nil
+		}
+		if _, err := w.Write(jbuf.Bytes()); err != nil {
+			return nil
+		}
+		if _, err := io.WriteString(w, "\r\n"); err != nil {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-time.After(100 * time.Millisecond):
+		}
 	}
 }
 

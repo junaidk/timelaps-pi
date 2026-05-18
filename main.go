@@ -46,8 +46,10 @@ func main() {
 	}
 
 	var capturer Capturer = &RealCapturer{cfg: cfg}
+	var streamer Streamer = &RealStreamer{cfg: cfg}
 	if *fakeCamera {
 		capturer = FakeCapturer{}
+		streamer = FakeStreamer{}
 		log.Printf("using fake camera — no ffmpeg/v4l2 needed")
 	}
 
@@ -67,7 +69,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("static fs: %v", err)
 	}
-	srv, err := NewServer(cfg, store, controller, templatesFS)
+	srv, err := NewServer(cfg, store, controller, streamer, templatesFS)
 	if err != nil {
 		log.Fatalf("init server: %v", err)
 	}

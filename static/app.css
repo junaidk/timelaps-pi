@@ -157,3 +157,14 @@ img.latest {
 .error { color: var(--danger); }
 .warn { color: #a35a00; }
 code { background: #f1f1f1; padding: 0.05rem 0.3rem; border-radius: 3px; font-size: 0.9em; }
+
+.viewfinder-card .viewfinder-stage { margin-top: 0.75rem; }
+.viewfinder-card img {
+  max-width: 100%;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: #000;
+  display: block;
+}
+.viewfinder-card [hidden] { display: none !important; }
+.viewfinder-card #vf-err { margin-top: 0.5rem; }

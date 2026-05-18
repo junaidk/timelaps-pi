@@ -51,6 +51,13 @@ type Controller struct {
 	cancel          context.CancelFunc
 	done            chan struct{}
 
+	// viewfinder state (shares c.mu with capture state so Start can sequence
+	// teardown deterministically)
+	viewfinderRunning bool
+	viewfinderCancel  context.CancelFunc
+	viewfinderDone    chan struct{}
+	viewfinderLastErr string
+
 	// compile state, keyed by session id
 	compileMu     sync.Mutex
 	compileStates map[string]*CompileStatus
@@ -87,6 +94,21 @@ func (c *Controller) ActiveSession() (string, bool) {
 
 func (c *Controller) Start(sessionID string) error {
 	c.mu.Lock()
+	// If the viewfinder is open, tear it down and wait for ffmpeg to actually
+	// exit before opening /dev/video0 from the capture loop — otherwise we'd
+	// rely on captureWithRetry to paper over an EBUSY race.
+	if c.viewfinderRunning {
+		cancel := c.viewfinderCancel
+		done := c.viewfinderDone
+		c.mu.Unlock()
+		if cancel != nil {
+			cancel()
+		}
+		if done != nil {
+			<-done
+		}
+		c.mu.Lock()
+	}
 	if c.running {
 		active := c.sessionID
 		c.mu.Unlock()
@@ -270,6 +292,57 @@ func (c *Controller) setLastErr(msg string) {
 	c.mu.Lock()
 	c.lastErr = msg
 	c.mu.Unlock()
+}
+
+// AcquireViewfinder reserves the camera for a viewfinder stream. Returns a
+// derived context (cancelled when the viewer disconnects OR when a capture
+// session starts) and a release callback the handler must defer.
+func (c *Controller) AcquireViewfinder(parent context.Context) (context.Context, func(), error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.running {
+		return nil, nil, errors.New("cannot start viewfinder while a session is capturing")
+	}
+	if c.viewfinderRunning {
+		return nil, nil, errors.New("viewfinder is already running")
+	}
+	ctx, cancel := context.WithCancel(parent)
+	done := make(chan struct{})
+	c.viewfinderRunning = true
+	c.viewfinderCancel = cancel
+	c.viewfinderDone = done
+	c.viewfinderLastErr = ""
+	release := func() {
+		c.mu.Lock()
+		c.viewfinderRunning = false
+		c.viewfinderCancel = nil
+		c.viewfinderDone = nil
+		c.mu.Unlock()
+		cancel()
+		close(done)
+	}
+	return ctx, release, nil
+}
+
+func (c *Controller) StopViewfinder() {
+	c.mu.Lock()
+	cancel := c.viewfinderCancel
+	c.mu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
+}
+
+func (c *Controller) SetViewfinderError(msg string) {
+	c.mu.Lock()
+	c.viewfinderLastErr = msg
+	c.mu.Unlock()
+}
+
+func (c *Controller) ViewfinderStatus() (running, capturing bool, lastErr string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.viewfinderRunning, c.running, c.viewfinderLastErr
 }
 
 func (c *Controller) CompileStatus(sessionID string) CompileStatus {

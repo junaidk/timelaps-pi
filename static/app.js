@@ -52,3 +52,78 @@
   tick();
   setInterval(tick, 2000);
 })();
+
+(function () {
+  const startBtn = document.getElementById('vf-start');
+  if (!startBtn) return;
+  const stopBtn = document.getElementById('vf-stop');
+  const vfImg = document.getElementById('vf-img');
+  const vfErr = document.getElementById('vf-err');
+
+  let running = false;
+
+  function showRunning() {
+    running = true;
+    startBtn.hidden = true;
+    stopBtn.hidden = false;
+    vfImg.hidden = false;
+    vfErr.hidden = true;
+    vfErr.textContent = '';
+  }
+
+  function showStopped() {
+    running = false;
+    startBtn.hidden = false;
+    stopBtn.hidden = true;
+    vfImg.hidden = true;
+    vfImg.removeAttribute('src');
+  }
+
+  function showError(msg) {
+    vfErr.textContent = msg;
+    vfErr.hidden = false;
+  }
+
+  startBtn.addEventListener('click', () => {
+    showRunning();
+    vfImg.src = '/viewfinder.mjpeg?ts=' + Date.now();
+  });
+
+  stopBtn.addEventListener('click', async () => {
+    showStopped();
+    try {
+      await fetch('/viewfinder/stop', { method: 'POST' });
+    } catch (e) {
+      // ignore — context cancel via disconnect already handled server-side
+    }
+  });
+
+  vfImg.addEventListener('error', () => {
+    if (running) {
+      showError('Viewfinder failed — camera may be busy or already in use.');
+      showStopped();
+    }
+  });
+
+  async function pollStatus() {
+    try {
+      const r = await fetch('/viewfinder/status.json', { cache: 'no-store' });
+      if (!r.ok) return;
+      const s = await r.json();
+      if (running && !s.running) {
+        // Server killed the stream (likely capture started elsewhere).
+        showStopped();
+        if (s.capturing) {
+          showError('Camera was taken over by a capture session.');
+        }
+      }
+    } catch (e) {
+      // ignore
+    }
+  }
+  setInterval(pollStatus, 2000);
+
+  window.addEventListener('beforeunload', () => {
+    if (running) navigator.sendBeacon('/viewfinder/stop');
+  });
+})();
