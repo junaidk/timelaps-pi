@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Snapshoter</title>
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<header>
+  <a href="/" class="brand">Snapshoter</a>
+  <nav>
+    <a href="/">Dashboard</a>
+    <a href="/settings">Settings</a>
+  </nav>
+</header>
+
+{{with .Flash}}<div class="flash flash-{{.Kind}}">{{.Msg}}</div>{{end}}
+
+<main>
+
+{{if .Capturing}}
+<div class="banner banner-active">
+  Capturing session <strong><a href="/sessions/{{.ActiveID}}">{{.ActiveID}}</a></strong> — {{.FramesThisRun}} frame(s) this run.
+</div>
+{{else}}
+<div class="banner">No capture in progress.</div>
+{{end}}
+
+<h2>Sessions</h2>
+
+{{if .Sessions}}
+<table class="sessions">
+  <thead>
+    <tr><th>Name</th><th>Created</th><th>Frames</th><th>Last frame</th><th>Interval</th><th>Resolution</th><th></th></tr>
+  </thead>
+  <tbody>
+  {{range .Sessions}}
+    <tr>
+      <td><a href="/sessions/{{.ID}}">{{.Name}}</a></td>
+      <td>{{fmtTime .CreatedAt}}</td>
+      <td>{{.LastFrameNumber}}</td>
+      <td>{{fmtTime .LastFrameAt}}</td>
+      <td>{{.Settings.IntervalSec}}s</td>
+      <td>{{.Settings.Width}}x{{.Settings.Height}}</td>
+      <td><a href="/sessions/{{.ID}}">open</a></td>
+    </tr>
+  {{end}}
+  </tbody>
+</table>
+{{else}}
+<p class="muted">No sessions yet. Create one below.</p>
+{{end}}
+
+<h2>New session</h2>
+<form method="post" action="/sessions" class="card">
+  <label>Name <input type="text" name="name" required placeholder="e.g. garden-sunset"></label>
+  <div class="row">
+    <label>Interval (sec) <input type="number" name="interval_sec" min="1" value="{{.Defaults.IntervalSec}}"></label>
+    <label>Width <input type="number" name="width" min="16" max="4096" value="{{.Defaults.Width}}"></label>
+    <label>Height <input type="number" name="height" min="16" max="4096" value="{{.Defaults.Height}}"></label>
+    <label>Quality (1&ndash;31) <input type="number" name="quality" min="1" max="31" value="{{.Defaults.Quality}}"></label>
+    <label>Output FPS <input type="number" name="fps" min="1" max="120" value="{{.Defaults.FPS}}"></label>
+  </div>
+  <button type="submit">Create session</button>
+</form>
+
+</main>
+
+<footer><small>Snapshoter — a small timelapse server.</small></footer>
+</body>
+</html>

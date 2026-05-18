@@ -1,0 +1,32 @@
+# Compiled binary
+/snapshoter
+
+# Cross-built binaries (e.g. for Pi)
+/snapshoter-*
+/dist/
+
+# Runtime data — captured frames, compiled videos, local config
+/data/
+
+# Go test / build artefacts
+*.test
+*.out
+*.coverprofile
+vendor/
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Claude Code workspace (local, per-user)
+.claude/

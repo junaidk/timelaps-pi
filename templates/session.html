@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{{.Session.Name}} — Snapshoter</title>
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<header>
+  <a href="/" class="brand">Snapshoter</a>
+  <nav>
+    <a href="/">Dashboard</a>
+    <a href="/settings">Settings</a>
+  </nav>
+</header>
+
+{{with .Flash}}<div class="flash flash-{{.Kind}}">{{.Msg}}</div>{{end}}
+
+<main data-session-id="{{.Session.ID}}">
+
+<h2>{{.Session.Name}}</h2>
+<p class="muted">Session <code>{{.Session.ID}}</code> — created {{fmtTime .Session.CreatedAt}}</p>
+
+<section class="card">
+  <h3>Status</h3>
+  <p>
+    Capturing: <strong id="status-capturing">{{if .IsActive}}yes{{else}}no{{end}}</strong>
+    · Frames this run: <strong id="status-frames-run">{{.FramesThisRun}}</strong>
+    · Total frames: <strong id="status-frames-total">{{.Session.LastFrameNumber}}</strong>
+    · Last frame: <strong id="status-last-at">{{fmtTime .Session.LastFrameAt}}</strong>
+  </p>
+  {{if .LastError}}<p class="error">Last error: <code>{{.LastError}}</code></p>{{end}}
+
+  <div class="controls">
+    {{if .IsActive}}
+      <form method="post" action="/sessions/{{.Session.ID}}/stop"><button class="danger" type="submit">Stop</button></form>
+    {{else if .Capturing}}
+      <p class="muted">Another session is capturing — stop it first.</p>
+    {{else}}
+      <form method="post" action="/sessions/{{.Session.ID}}/start">
+        <button class="primary" type="submit">{{if .HasFrames}}Resume{{else}}Start{{end}}</button>
+      </form>
+    {{end}}
+
+    {{if and (not .IsActive) .HasFrames}}
+      <form method="post" action="/sessions/{{.Session.ID}}/compile">
+        <button type="submit" {{if .Compile.Running}}disabled{{end}}>
+          {{if .Compile.Running}}Compiling…{{else}}Compile video{{end}}
+        </button>
+      </form>
+    {{end}}
+
+    {{if not .IsActive}}
+      <form method="post" action="/sessions/{{.Session.ID}}/delete" onsubmit="return confirm('Delete this session and all its frames and videos?');">
+        <button class="danger" type="submit">Delete</button>
+      </form>
+    {{end}}
+  </div>
+  <p id="compile-status" class="muted">
+    {{if .Compile.Running}}Compile in progress (started {{fmtTime .Compile.StartedAt}})…{{end}}
+    {{if .Compile.LastError}}<span class="error">Compile error: {{.Compile.LastError}}</span>{{end}}
+    {{if and (not .Compile.Running) .Compile.Output}}Last compile: {{.Compile.Output}}{{if .Compile.Encoder}} ({{.Compile.Encoder}}){{end}}{{end}}
+  </p>
+  {{if .Compile.Warning}}<p class="warn">{{.Compile.Warning}}</p>{{end}}
+</section>
+
+<section class="card">
+  <h3>Latest frame</h3>
+  {{if .HasFrames}}
+    <img id="latest-frame" src="/sessions/{{.Session.ID}}/latest.jpg" alt="latest frame" class="latest">
+  {{else}}
+    <p class="muted">No frames captured yet.</p>
+  {{end}}
+</section>
+
+<section class="card">
+  <h3>Settings</h3>
+  {{if .IsActive}}<p class="muted">Stop the session to edit settings.</p>{{end}}
+  <form method="post" action="/sessions/{{.Session.ID}}/settings">
+    <div class="row">
+      <label>Interval (sec)
+        <input type="number" name="interval_sec" min="1" value="{{.Session.Settings.IntervalSec}}" {{if .IsActive}}disabled{{end}}>
+      </label>
+      <label>Width
+        <input type="number" name="width" min="16" max="4096" value="{{.Session.Settings.Width}}" {{if .IsActive}}disabled{{end}}>
+      </label>
+      <label>Height
+        <input type="number" name="height" min="16" max="4096" value="{{.Session.Settings.Height}}" {{if .IsActive}}disabled{{end}}>
+      </label>
+      <label>Quality (1–31)
+        <input type="number" name="quality" min="1" max="31" value="{{.Session.Settings.Quality}}" {{if .IsActive}}disabled{{end}}>
+      </label>
+      <label>Output FPS
+        <input type="number" name="fps" min="1" max="120" value="{{.Session.Settings.FPS}}" {{if .IsActive}}disabled{{end}}>
+      </label>
+    </div>
+    <button type="submit" {{if .IsActive}}disabled{{end}}>Save settings</button>
+  </form>
+</section>
+
+<section class="card">
+  <h3>Compiled videos</h3>
+  {{if .Videos}}
+  <ul class="videos">
+    {{range .Videos}}
+    <li>
+      <video controls preload="metadata" src="/sessions/{{$.Session.ID}}/videos/{{.}}"></video>
+      <div>
+        <code>{{.}}</code>
+        <a href="/sessions/{{$.Session.ID}}/videos/{{.}}?download=1">download</a>
+      </div>
+    </li>
+    {{end}}
+  </ul>
+  {{else}}
+  <p class="muted">No videos compiled yet.</p>
+  {{end}}
+</section>
+
+</main>
+
+<footer><small>Snapshoter — a small timelapse server.</small></footer>
+<script src="/static/app.js"></script>
+</body>
+</html>

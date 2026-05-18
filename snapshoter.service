@@ -1,0 +1,25 @@
+[Unit]
+Description=Snapshoter timelapse server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=junaid
+Group=junaid
+SupplementaryGroups=video
+WorkingDirectory=/home/junaid/snapshoter
+ExecStart=/home/junaid/snapshoter/snapshoter -addr :8080 -data-dir /home/junaid/snapshoter/data -camera /dev/video0
+Restart=on-failure
+RestartSec=3
+
+# Modest hardening. The service still needs read/write under its data dir and
+# access to /dev/video* for the USB camera and the V4L2 M2M H.264 encoder.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectKernelTunables=true
+ProtectControlGroups=true
+
+[Install]
+WantedBy=multi-user.target

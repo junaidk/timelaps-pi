@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Settings — Snapshoter</title>
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<header>
+  <a href="/" class="brand">Snapshoter</a>
+  <nav>
+    <a href="/">Dashboard</a>
+    <a href="/settings">Settings</a>
+  </nav>
+</header>
+
+{{with .Flash}}<div class="flash flash-{{.Kind}}">{{.Msg}}</div>{{end}}
+
+<main>
+
+<h2>Global settings</h2>
+<form method="post" action="/settings" class="card">
+  <label>Data directory
+    <input type="text" name="data_dir" value="{{.Config.DataDir}}" required>
+    <small class="muted">Where sessions, frames and videos are stored on disk.</small>
+  </label>
+  <label>Camera device
+    <input type="text" name="camera" value="{{.Config.Camera}}" required>
+    <small class="muted">e.g. <code>/dev/video0</code>. Ignored when running with <code>-fake-camera</code>.</small>
+  </label>
+
+  <fieldset class="fieldset">
+    <legend>Video encoder</legend>
+    {{if .HardwareAvailable}}
+      <label class="inline">
+        <input type="radio" name="encoder" value="software" {{if not .Config.HardwareEncode}}checked{{end}}>
+        Software (libx264 — CPU, CRF 23)
+      </label>
+      <label class="inline">
+        <input type="radio" name="encoder" value="hardware" {{if .Config.HardwareEncode}}checked{{end}}>
+        Hardware (h264_v4l2m2m — Pi GPU)
+      </label>
+      <p class="muted hint">If the hardware encoder fails at compile time, snapshoter falls back to libx264 automatically and shows a warning on the session page.</p>
+
+      <div class="bitrate">
+        <strong>Hardware bitrate</strong>
+        <label class="inline"><input type="radio" name="hardware_bitrate" value="low"    {{if eq (printf "%s" .Config.HardwareBitrate) "low"}}checked{{end}}>    Low (2 Mbps)</label>
+        <label class="inline"><input type="radio" name="hardware_bitrate" value="medium" {{if eq (printf "%s" .Config.HardwareBitrate) "medium"}}checked{{end}}> Medium (4 Mbps)</label>
+        <label class="inline"><input type="radio" name="hardware_bitrate" value="high"   {{if eq (printf "%s" .Config.HardwareBitrate) "high"}}checked{{end}}>   High (8 Mbps)</label>
+      </div>
+    {{else}}
+      <p class="muted">Hardware encoder <code>h264_v4l2m2m</code> not detected. Using software encoder (libx264).</p>
+      <input type="hidden" name="encoder" value="software">
+      <input type="hidden" name="hardware_bitrate" value="{{.Config.HardwareBitrate}}">
+    {{end}}
+  </fieldset>
+
+  <button type="submit">Save</button>
+</form>
+
+</main>
+
+<footer><small>Snapshoter — a small timelapse server.</small></footer>
+</body>
+</html>
