@@ -25,10 +25,35 @@
     <input type="text" name="data_dir" value="{{.Config.DataDir}}" required>
     <small class="muted">Where sessions, frames and videos are stored on disk.</small>
   </label>
-  <label>Camera device
-    <input type="text" name="camera" value="{{.Config.Camera}}" required>
-    <small class="muted">e.g. <code>/dev/video0</code>. Ignored when running with <code>-fake-camera</code>.</small>
-  </label>
+
+  <fieldset class="fieldset">
+    <legend>Camera source</legend>
+    <label class="inline">
+      <input type="radio" name="camera_type" value="usb" data-camera-type="usb" {{if ne (printf "%s" .Config.CameraType) "rtsp"}}checked{{end}}>
+      USB / V4L2 device
+    </label>
+    <label class="inline">
+      <input type="radio" name="camera_type" value="rtsp" data-camera-type="rtsp" {{if eq (printf "%s" .Config.CameraType) "rtsp"}}checked{{end}}>
+      IP camera (RTSP)
+    </label>
+
+    <div class="camera-fields" data-camera-fields="usb" {{if eq (printf "%s" .Config.CameraType) "rtsp"}}hidden{{end}}>
+      <label>Camera device
+        <input type="text" name="camera" value="{{.Config.Camera}}">
+        <small class="muted">e.g. <code>/dev/video0</code>. Ignored when running with <code>-fake-camera</code>.</small>
+      </label>
+    </div>
+
+    <div class="camera-fields" data-camera-fields="rtsp" {{if ne (printf "%s" .Config.CameraType) "rtsp"}}hidden{{end}}>
+      <label>RTSP URL
+        <input type="text" name="rtsp_url" value="{{.Config.RtspURL}}" placeholder="rtsp://user:pass@192.168.88.167:554/stream1">
+        <small class="muted">
+          Embed credentials in the URL. URL-encode any special characters in the password
+          (e.g. <code>@</code> → <code>%40</code>). The stream is read over TCP for stability.
+        </small>
+      </label>
+    </div>
+  </fieldset>
 
   <fieldset class="fieldset">
     <legend>Video encoder</legend>
@@ -62,5 +87,19 @@
 </main>
 
 <footer><small>Snapshoter — a small timelapse server.</small></footer>
+<script>
+(function () {
+  const radios = document.querySelectorAll('input[name="camera_type"]');
+  const panels = document.querySelectorAll('[data-camera-fields]');
+  if (!radios.length || !panels.length) return;
+  function sync() {
+    const picked = document.querySelector('input[name="camera_type"]:checked');
+    const v = picked ? picked.value : 'usb';
+    panels.forEach(p => { p.hidden = p.dataset.cameraFields !== v; });
+  }
+  radios.forEach(r => r.addEventListener('change', sync));
+  sync();
+})();
+</script>
 </body>
 </html>

@@ -12,7 +12,9 @@ timelapse videos. Single static binary, no DB, no framework, stdlib-only.
   (`-q:v` 1–31), output video FPS.
 - **On-demand video compile** per session. Resulting MP4 plays in-browser
   and can be downloaded.
-- Configurable data directory (in the UI) and camera device.
+- Configurable data directory (in the UI) and camera source: either a
+  local **USB / V4L2** device (`/dev/video0`) or a network **RTSP** IP
+  camera (`rtsp://user:pass@host:554/stream1`).
 - LAN-only / no auth — intended for a home Pi behind a router.
 
 ## Build
@@ -50,6 +52,14 @@ Flags:
 | `-fake-camera`   | off            | dev mode — generates synthetic JPEGs, no ffmpeg/v4l2 needed   |
 
 Then open `http://<pi-ip>:8080`.
+
+To use an **IP camera** instead, open `/settings`, switch *Camera source*
+to **IP camera (RTSP)**, and paste a URL like
+`rtsp://user:pass@192.168.80.16:554/stream1`. The stream is read over
+TCP, and capture resolution from each session is applied via an ffmpeg
+`scale` filter (the camera's native resolution is used to acquire, then
+rescaled to the session's `width`/`height`). URL-encode any special
+characters in the password (`@` → `%40`, etc.).
 
 ## Pi setup
 

@@ -24,15 +24,10 @@ type RealCapturer struct {
 }
 
 func (r *RealCapturer) Capture(ctx context.Context, s *Session, framePath string) error {
-	_, camera := r.cfg.Snapshot()
-	args := []string{
-		"-hide_banner", "-loglevel", "error", "-y",
-		"-f", "v4l2",
-		"-video_size", fmt.Sprintf("%dx%d", s.Settings.Width, s.Settings.Height),
-		"-i", camera,
-		"-frames:v", "1",
-		"-q:v", fmt.Sprintf("%d", s.Settings.Quality),
-		framePath,
+	spec := r.cfg.CameraSpec()
+	args, err := captureArgs(spec, s, framePath)
+	if err != nil {
+		return err
 	}
 	cmd := exec.CommandContext(ctx, "ffmpeg", args...)
 	var stderr bytes.Buffer
@@ -41,6 +36,37 @@ func (r *RealCapturer) Capture(ctx context.Context, s *Session, framePath string
 		return fmt.Errorf("ffmpeg capture failed: %v: %s", err, stderr.String())
 	}
 	return nil
+}
+
+func captureArgs(spec CameraSpec, s *Session, framePath string) ([]string, error) {
+	switch spec.Type {
+	case CameraRTSP:
+		if strings.TrimSpace(spec.RTSPURL) == "" {
+			return nil, fmt.Errorf("RTSP URL is empty — set it on the Settings page")
+		}
+		return []string{
+			"-hide_banner", "-loglevel", "error", "-y",
+			"-rtsp_transport", "tcp",
+			"-i", spec.RTSPURL,
+			"-frames:v", "1",
+			"-vf", fmt.Sprintf("scale=%d:%d", s.Settings.Width, s.Settings.Height),
+			"-q:v", fmt.Sprintf("%d", s.Settings.Quality),
+			framePath,
+		}, nil
+	default:
+		if strings.TrimSpace(spec.Device) == "" {
+			return nil, fmt.Errorf("camera device is empty — set it on the Settings page")
+		}
+		return []string{
+			"-hide_banner", "-loglevel", "error", "-y",
+			"-f", "v4l2",
+			"-video_size", fmt.Sprintf("%dx%d", s.Settings.Width, s.Settings.Height),
+			"-i", spec.Device,
+			"-frames:v", "1",
+			"-q:v", fmt.Sprintf("%d", s.Settings.Quality),
+			framePath,
+		}, nil
+	}
 }
 
 type FakeCapturer struct{}
@@ -131,21 +157,16 @@ type RealStreamer struct {
 }
 
 func (r *RealStreamer) Stream(ctx context.Context, w io.Writer) error {
-	_, camera := r.cfg.Snapshot()
-	args := []string{
-		"-hide_banner", "-loglevel", "error",
-		"-f", "v4l2",
-		"-video_size", "1280x720",
-		"-i", camera,
-		"-f", "mpjpeg",
-		"-q:v", "5",
-		"pipe:1",
+	spec := r.cfg.CameraSpec()
+	args, err := streamArgs(spec)
+	if err != nil {
+		return err
 	}
 	cmd := exec.CommandContext(ctx, "ffmpeg", args...)
 	cmd.Stdout = w
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
-	err := cmd.Run()
+	err = cmd.Run()
 	if ctx.Err() != nil {
 		return nil
 	}
@@ -153,6 +174,36 @@ func (r *RealStreamer) Stream(ctx context.Context, w io.Writer) error {
 		return fmt.Errorf("ffmpeg viewfinder failed: %v: %s", err, strings.TrimSpace(stderr.String()))
 	}
 	return nil
+}
+
+func streamArgs(spec CameraSpec) ([]string, error) {
+	switch spec.Type {
+	case CameraRTSP:
+		if strings.TrimSpace(spec.RTSPURL) == "" {
+			return nil, fmt.Errorf("RTSP URL is empty — set it on the Settings page")
+		}
+		return []string{
+			"-hide_banner", "-loglevel", "error",
+			"-rtsp_transport", "tcp",
+			"-i", spec.RTSPURL,
+			"-f", "mpjpeg",
+			"-q:v", "5",
+			"pipe:1",
+		}, nil
+	default:
+		if strings.TrimSpace(spec.Device) == "" {
+			return nil, fmt.Errorf("camera device is empty — set it on the Settings page")
+		}
+		return []string{
+			"-hide_banner", "-loglevel", "error",
+			"-f", "v4l2",
+			"-video_size", "1280x720",
+			"-i", spec.Device,
+			"-f", "mpjpeg",
+			"-q:v", "5",
+			"pipe:1",
+		}, nil
+	}
 }
 
 type FakeStreamer struct{}

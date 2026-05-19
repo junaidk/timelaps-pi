@@ -379,7 +379,9 @@ type settingsData struct {
 	Flash  *flash
 	Config struct {
 		DataDir         string
+		CameraType      CameraType
 		Camera          string
+		RtspURL         string
 		HardwareEncode  bool
 		HardwareBitrate BitratePreset
 	}
@@ -442,11 +444,14 @@ func (s *Server) handleViewfinderStatus(w http.ResponseWriter, r *http.Request) 
 }
 
 func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
-	dataDir, camera := s.cfg.Snapshot()
+	dataDir, _ := s.cfg.Snapshot()
+	camType, camera, rtspURL := s.cfg.CameraSettings()
 	hwEnabled, hwAvailable, bitrate := s.cfg.EncodeSettings()
 	data := settingsData{Flash: popFlash(w, r), HardwareAvailable: hwAvailable}
 	data.Config.DataDir = dataDir
+	data.Config.CameraType = camType
 	data.Config.Camera = camera
+	data.Config.RtspURL = rtspURL
 	data.Config.HardwareEncode = hwEnabled
 	data.Config.HardwareBitrate = bitrate
 	s.render(w, "settings.html", data)
@@ -464,20 +469,36 @@ func (s *Server) handleSaveSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	dataDir := strings.TrimSpace(r.FormValue("data_dir"))
+	camType := ValidCameraType(r.FormValue("camera_type"))
 	camera := strings.TrimSpace(r.FormValue("camera"))
+	rtspURL := strings.TrimSpace(r.FormValue("rtsp_url"))
 	if dataDir == "" {
 		setFlash(w, "error", "data dir is required")
 		http.Redirect(w, r, "/settings", http.StatusSeeOther)
 		return
 	}
-	if camera == "" {
-		setFlash(w, "error", "camera is required")
-		http.Redirect(w, r, "/settings", http.StatusSeeOther)
-		return
+	switch camType {
+	case CameraUSB:
+		if camera == "" {
+			setFlash(w, "error", "camera device is required for USB cameras")
+			http.Redirect(w, r, "/settings", http.StatusSeeOther)
+			return
+		}
+	case CameraRTSP:
+		if rtspURL == "" {
+			setFlash(w, "error", "RTSP URL is required for IP cameras")
+			http.Redirect(w, r, "/settings", http.StatusSeeOther)
+			return
+		}
+		if !strings.HasPrefix(strings.ToLower(rtspURL), "rtsp://") && !strings.HasPrefix(strings.ToLower(rtspURL), "rtsps://") {
+			setFlash(w, "error", "RTSP URL must start with rtsp:// or rtsps://")
+			http.Redirect(w, r, "/settings", http.StatusSeeOther)
+			return
+		}
 	}
 	hwEncode := r.FormValue("encoder") == "hardware" && s.cfg.HardwareAvailable()
 	bitrate := ValidBitrate(r.FormValue("hardware_bitrate"))
-	if err := s.cfg.Update(dataDir, camera, hwEncode, bitrate); err != nil {
+	if err := s.cfg.Update(dataDir, camType, camera, rtspURL, hwEncode, bitrate); err != nil {
 		setFlash(w, "error", err.Error())
 		http.Redirect(w, r, "/settings", http.StatusSeeOther)
 		return

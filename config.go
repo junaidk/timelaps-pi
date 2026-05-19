@@ -37,9 +37,33 @@ func ValidBitrate(s string) BitratePreset {
 	}
 }
 
+// CameraType is "usb" (V4L2 device) or "rtsp" (network IP camera).
+type CameraType string
+
+const (
+	CameraUSB  CameraType = "usb"
+	CameraRTSP CameraType = "rtsp"
+)
+
+func ValidCameraType(s string) CameraType {
+	if CameraType(s) == CameraRTSP {
+		return CameraRTSP
+	}
+	return CameraUSB
+}
+
+// CameraSpec is the resolved camera input for ffmpeg.
+type CameraSpec struct {
+	Type     CameraType
+	Device   string // V4L2 device path when Type == CameraUSB
+	RTSPURL  string // RTSP URL (may embed user:pass) when Type == CameraRTSP
+}
+
 type Config struct {
 	DataDir         string        `json:"data_dir"`
+	CameraType      CameraType    `json:"camera_type"`
 	Camera          string        `json:"camera"`
+	RtspURL         string        `json:"rtsp_url"`
 	HardwareEncode  bool          `json:"hardware_encode"`
 	HardwareBitrate BitratePreset `json:"hardware_bitrate"`
 
@@ -53,7 +77,9 @@ type Config struct {
 func LoadConfig(path, defaultDataDir, defaultCamera string) (*Config, error) {
 	c := &Config{
 		DataDir:         defaultDataDir,
+		CameraType:      CameraUSB,
 		Camera:          defaultCamera,
+		RtspURL:         "",
 		HardwareEncode:  false,
 		HardwareBitrate: BitrateMedium,
 		path:            path,
@@ -74,6 +100,7 @@ func LoadConfig(path, defaultDataDir, defaultCamera string) (*Config, error) {
 	if c.Camera == "" {
 		c.Camera = defaultCamera
 	}
+	c.CameraType = ValidCameraType(string(c.CameraType))
 	c.HardwareBitrate = ValidBitrate(string(c.HardwareBitrate))
 	return c, nil
 }
@@ -86,10 +113,12 @@ func (c *Config) Save() error {
 	}
 	data, err := json.MarshalIndent(struct {
 		DataDir         string        `json:"data_dir"`
+		CameraType      CameraType    `json:"camera_type"`
 		Camera          string        `json:"camera"`
+		RtspURL         string        `json:"rtsp_url"`
 		HardwareEncode  bool          `json:"hardware_encode"`
 		HardwareBitrate BitratePreset `json:"hardware_bitrate"`
-	}{c.DataDir, c.Camera, c.HardwareEncode, c.HardwareBitrate}, "", "  ")
+	}{c.DataDir, c.CameraType, c.Camera, c.RtspURL, c.HardwareEncode, c.HardwareBitrate}, "", "  ")
 	if err != nil {
 		return err
 	}
@@ -100,6 +129,22 @@ func (c *Config) Snapshot() (dataDir, camera string) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.DataDir, c.Camera
+}
+
+func (c *Config) CameraSpec() CameraSpec {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return CameraSpec{
+		Type:    c.CameraType,
+		Device:  c.Camera,
+		RTSPURL: c.RtspURL,
+	}
+}
+
+func (c *Config) CameraSettings() (camType CameraType, device, rtspURL string) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.CameraType, c.Camera, c.RtspURL
 }
 
 func (c *Config) EncodeSettings() (hwEnabled, hwAvailable bool, bitrate BitratePreset) {
@@ -120,10 +165,12 @@ func (c *Config) SetHardwareAvailable(v bool) {
 	c.mu.Unlock()
 }
 
-func (c *Config) Update(dataDir, camera string, hwEncode bool, hwBitrate BitratePreset) error {
+func (c *Config) Update(dataDir string, camType CameraType, camera, rtspURL string, hwEncode bool, hwBitrate BitratePreset) error {
 	c.mu.Lock()
 	c.DataDir = dataDir
+	c.CameraType = ValidCameraType(string(camType))
 	c.Camera = camera
+	c.RtspURL = rtspURL
 	c.HardwareEncode = hwEncode
 	c.HardwareBitrate = ValidBitrate(string(hwBitrate))
 	c.mu.Unlock()
